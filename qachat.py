@@ -1,9 +1,5 @@
-import streamlit as st
-
-# Set Streamlit page configuration
-st.set_page_config(page_title="PhishNet AI", layout="wide")
-
 from dotenv import load_dotenv
+import streamlit as st
 import os
 import google.generativeai as genai
 import numpy as np
@@ -14,34 +10,19 @@ from sklearn.model_selection import train_test_split
 import pandas as pd
 from langchain_utils import summarize_with_langchain, qa_with_langchain  # Import LangChain functions
 from urllib.parse import urlparse
-from login import login_page, otp_page, register_page, ApplicationLayer, DatabaseLayer  # Import login functionality
 
 try:
     from langchain_community.document_loaders import UnstructuredFileLoader
 except ImportError:
     raise ImportError("The 'unstructured' package is not found. Please install it with 'pip install unstructured'.")
 
+# Set Streamlit page configuration
+st.set_page_config(page_title="PhishNet AI", layout="wide")
+
 # Load environment variables
 load_dotenv()
 
 genai.configure(api_key="AIzaSyA7Q2_eC2-RXD9sG1rZjMl2FqE0eMQwkB0")  # Your provided API key
-
-# Initialize layers
-db_layer = DatabaseLayer()
-app_layer = ApplicationLayer(db_layer)
-
-# Authentication
-if st.session_state.page == "login":
-    login_page(app_layer)
-    st.stop()
-elif st.session_state.page == "register":
-    register_page(app_layer)
-    st.stop()
-elif st.session_state.page == "otp":
-    otp_page(app_layer)
-    st.stop()
-elif st.session_state.page == "main":
-    pass  # Continue to the chatbot
 
 # Function to load Gemini Pro model and get responses
 @st.cache_resource
@@ -54,18 +35,34 @@ chat = initialize_genai_model()
 def get_gemini_response(question):
     try:
         response = chat.send_message(question, stream=True)
-        return ''.join([chunk.text for chunk in response])
+        if not response:
+            raise ValueError("No response received from the model.")
+        return ''.join([chunk.text for chunk in response if hasattr(chunk, 'text')])
     except Exception as e:
-        return f"An error occurred: {e}"
+        # Attempt to rewind and retry once
+        try:
+            chat.rewind()
+            response = chat.send_message(question, stream=True)
+            if not response:
+                raise ValueError("No response received from the model.")
+            return ''.join([chunk.text for chunk in response if hasattr(chunk, 'text')])
+        except Exception as retry_e:
+            # Handle safety ratings and no valid text
+            if hasattr(retry_e, 'safety_ratings'):
+                return "The response was flagged for safety concerns and could not be processed."
+            return f"An error occurred: {retry_e}"
 
 # Train or Load the Phishing Detection Model
 @st.cache_resource
-def train_and_save_model():
-    dataset_path = 'phishing.csv'  # Update this path if necessary
+def train_and_save_model(uploaded_file=None):
+    dataset_path = 'C:\\PHISH-NET-AI-\\phishing.csv'
     try:
-        data = pd.read_csv(dataset_path)
-    except FileNotFoundError:
-        st.error(f"Dataset not found at {dataset_path}. Ensure it exists.")
+        if uploaded_file:
+            data = pd.read_csv(uploaded_file)
+        else:
+            data = pd.read_csv(dataset_path)
+    except Exception as e:
+        st.error(f"An error occurred while reading the dataset: {e}")
         raise
 
     # Separate features and labels
@@ -80,17 +77,23 @@ def train_and_save_model():
     model.fit(X_train, y_train)
 
     # Save the trained model
-    with open('model.pkl', 'wb') as file:
+    with open('C:\\PHISH-NET-AI-\\model.pkl', 'wb') as file:
         pickle.dump(model, file)
     
+    st.success("Model trained and saved successfully.")
     return model
 
 # Load existing model or train a new one if not found
-try:
-    with open('model.pkl', 'rb') as model_file:
-        phishing_model = pickle.load(model_file)
-except (FileNotFoundError, EOFError):
-    phishing_model = train_and_save_model()
+def load_or_train_model():
+    model_path = 'C:\\PHISH-NET-AI-\\model.pkl'
+    try:
+        with open(model_path, 'rb') as model_file:
+            return pickle.load(model_file)
+    except (FileNotFoundError, EOFError, ValueError):
+        st.warning("Model not found or incompatible. Training a new model.")
+        return train_and_save_model()
+
+phishing_model = load_or_train_model()
 
 # Function to check if a URL is phishing or safe
 def check_phishing(url):
@@ -124,13 +127,23 @@ def check_phishing(url):
         proba_safe = phishing_model.predict_proba(features)[0, 0]
         proba_phishing = phishing_model.predict_proba(features)[0, 1]
 
+        is_safe = proba_safe > 0.6
+
         return {
-            "is_safe": prediction == 0,
+            "is_safe": is_safe,
             "prob_safe": round(proba_safe * 100, 2),
             "prob_phishing": round(proba_phishing * 100, 2),
         }
     except Exception as e:
         return {"error": str(e)}
+
+def classify_phishing_reason(url):
+    try:
+        question = f"Why is the URL '{url}' considered unsafe?"
+        response = get_gemini_response(question)
+        return response
+    except Exception as e:
+        return f"An error occurred while classifying the reason: {e}"
 
 # Add custom CSS for enhanced UI
 def add_custom_css():
@@ -262,6 +275,8 @@ with tab2:
             
         else:
             st.error(f"The URL is phishing ({result['prob_phishing']}% confidence).")
+            reason = classify_phishing_reason(url_input)
+            st.info(f"Reason: {reason}")
 
 # LangChain Features Tab
 with tab3:
