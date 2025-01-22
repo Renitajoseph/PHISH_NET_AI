@@ -55,7 +55,7 @@ def get_gemini_response(question):
 # Train or Load the Phishing Detection Model
 @st.cache_resource
 def train_and_save_model(uploaded_file=None):
-    dataset_path = 'C:\\PHISH-NET-AI-\\phishing.csv'
+    dataset_path = 'phishing.csv'
     try:
         if uploaded_file:
             data = pd.read_csv(uploaded_file)
@@ -77,7 +77,7 @@ def train_and_save_model(uploaded_file=None):
     model.fit(X_train, y_train)
 
     # Save the trained model
-    with open('C:\\PHISH-NET-AI-\\model.pkl', 'wb') as file:
+    with open('model.pkl', 'wb') as file:
         pickle.dump(model, file)
     
     st.success("Model trained and saved successfully.")
@@ -85,7 +85,7 @@ def train_and_save_model(uploaded_file=None):
 
 # Load existing model or train a new one if not found
 def load_or_train_model():
-    model_path = 'C:\\PHISH-NET-AI-\\model.pkl'
+    model_path = 'model.pkl'
     try:
         with open(model_path, 'rb') as model_file:
             return pickle.load(model_file)
