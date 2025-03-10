@@ -9,7 +9,7 @@ from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.model_selection import train_test_split
 import pandas as pd
 try:
-    from langchain_utils import summarize_text, load_input_file, STYLES, LANGUAGES  # Import LangChain functions
+    from langchain_utils import summarize_with_langchain, qa_with_langchain  
 except FileNotFoundError as e:
     raise FileNotFoundError(f"Error importing langchain_utils: {e}")
 from urllib.parse import urlparse
